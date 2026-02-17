@@ -1,0 +1,14 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/shared" },
+    { "path": "packages/observability" },
+    { "path": "packages/storage" },
+    { "path": "packages/ffmpeg" },
+    { "path": "packages/db" },
+    { "path": "apps/api" },
+    { "path": "apps/worker" },
+    { "path": "scripts" }
+  ]
+}
+

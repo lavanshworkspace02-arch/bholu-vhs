@@ -1,0 +1,198 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: video-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-app}
+      POSTGRES_DB: video
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d video"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - video-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: video-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - video-network
+
+  minio:
+    image: minio/minio:RELEASE.2025-01-20T00-00-00Z
+    container_name: video-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minio}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minio123}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+    networks:
+      - video-network
+
+  clamav:
+    image: clamav/clamav:stable
+    container_name: video-clamav
+    restart: unless-stopped
+    ports:
+      - "3310:3310"
+    volumes:
+      - clamav_data:/var/lib/clamav
+    networks:
+      - video-network
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.62
+    container_name: video-jaeger
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+    networks:
+      - video-network
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: video-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+    networks:
+      - video-network
+
+  grafana:
+    image: grafana/grafana:11.1.4
+    container_name: video-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_INSTALL_PLUGINS: grafana-piechart-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - video-network
+
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/api.Dockerfile
+      cache_from:
+        - type=registry,ref=ghcr.io/video-ingest-microservice-api:latest
+    container_name: video-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_URL: postgresql://app:${DATABASE_PASSWORD:-app}@postgres:5432/video
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minio}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minio123}
+      S3_BUCKET: artifacts
+      JWT_SECRET: ${JWT_SECRET:-dev-secret}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      ALLOW_ANON: ${ALLOW_ANON:-false}
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - video-network
+
+  worker:
+    build:
+      context: .
+      dockerfile: infra/docker/worker.Dockerfile
+      cache_from:
+        - type=registry,ref=ghcr.io/video-ingest-microservice-worker:latest
+    container_name: video-worker
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_URL: postgresql://app:${DATABASE_PASSWORD:-app}@postgres:5432/video
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minio}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minio123}
+      S3_BUCKET: artifacts
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: "3310"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      WORKER_GPU: ${WORKER_GPU:-false}
+      QA_SAMPLING_RATE: ${QA_SAMPLING_RATE:-0.01}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      clamav:
+        condition: service_started
+    networks:
+      - video-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  clamav_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  video-network:
+    driver: bridge

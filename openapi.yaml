@@ -1,0 +1,97 @@
+openapi: 3.0.3
+info:
+  title: Video Ingest API
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+paths:
+  /api/v1/sessions:
+    post:
+      summary: Create intake session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [profile, source]
+              properties:
+                project_id: { type: string }
+                profile: { type: string }
+                random_seed: { type: string }
+                source: { type: object }
+      responses:
+        "200": { description: Session created }
+  /api/v1/sessions/{id}/upload_chunk:
+    post:
+      summary: Upload resumable chunk
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200": { description: Chunk accepted }
+  /api/v1/sessions/{id}/upload:
+    post:
+      summary: Upload whole file (multipart)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200": { description: Upload accepted }
+  /api/v1/sessions/{id}/commit:
+    post:
+      summary: Commit session and enqueue job
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Job enqueued }
+  /api/v1/jobs/{id}/status:
+    get:
+      summary: Get job status and artifacts
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Job status }
+  /api/v1/jobs/{id}/cancel:
+    post:
+      summary: Cancel job
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Job canceled }
+  /api/v1/presets:
+    get:
+      summary: List profiles/presets
+      responses:
+        "200": { description: Presets }
+

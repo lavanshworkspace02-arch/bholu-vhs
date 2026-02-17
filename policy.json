@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "profiles": {
+    "web_720p_h264": {
+      "description": "MP4/H.264 + AAC, 1280x720, faststart, deterministic",
+      "container": "mp4",
+      "video": { "codec": "h264", "width": 1280, "height": 720, "crf": 23, "preset": "medium" },
+      "audio": { "codec": "aac", "bitrate_kbps": 128 },
+      "allow_remux_if_compatible": true,
+      "deterministic": true
+    },
+    "mobile_480p_hevc": {
+      "description": "MP4/HEVC + AAC, 854x480",
+      "container": "mp4",
+      "video": { "codec": "hevc", "width": 854, "height": 480, "crf": 28, "preset": "medium" },
+      "audio": { "codec": "aac", "bitrate_kbps": 96 },
+      "allow_remux_if_compatible": false,
+      "deterministic": true
+    },
+    "archival_prores": {
+      "description": "MOV/ProRes 422 HQ + PCM, preserve metadata",
+      "container": "mov",
+      "video": { "codec": "prores", "profile": "hq" },
+      "audio": { "codec": "pcm_s16le" },
+      "allow_remux_if_compatible": true,
+      "deterministic": true
+    }
+  }
+}
+
